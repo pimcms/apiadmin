@@ -17,9 +17,9 @@ return [
     // 数据库名
     'database'        => 'apiadmin',
     // 用户名
-    'username'        => 'root',
+    'username'        => 'apiadmin',
     // 密码
-    'password'        => 'root',
+    'password'        => '6AXxXafs7esEb5Hj',
     // 端口
     'hostport'        => '3306',
     // 连接dsn
