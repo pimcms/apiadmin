@@ -2,29 +2,40 @@
 
 
 namespace app\api\controller\taolijin;
-
-
 use app\api\controller\Base;
 use app\util\TaolijinCode;
+use app\api\service\Taolijin as TljService;
 
 class Taolijin extends Base
 {
     /**
      * 创建淘礼金
      */
-    public function create_taolijin(){
-        $tlj = $this->getTbTlj(); // 获取淘礼金相关配置
+    public function createTaolijin(){
+        die(111);
+        $main_id = $this->request->post("main_id");//主账户id
+        if (!$main_id) return $this->buildFailed(TaolijinCode::API_PARAMS_ERROR, "缺少参数main_id");
+        $sub_id = $this->request->post("sub_id");//机器人子账户
+        if (!$sub_id) return $this->buildFailed(TaolijinCode::API_PARAMS_ERROR, "缺少参数sub_id");
+        $wx_id = $this->request->post("wx_id");//wxid
+        if (!$wx_id) return $this->buildFailed(TaolijinCode::API_PARAMS_ERROR, "缺少参数wx_id");
+        $uid = $this->request->post("uid");//uid
+        if (!$uid) return $this->buildFailed(TaolijinCode::API_PARAMS_ERROR, "缺少参数uid");
+        $goodsid = $this->request->post("goodsid");//商品id
+        if (!$goodsid) return $this->buildFailed(TaolijinCode::API_PARAMS_ERROR, "缺少参数goodsid");
+        $tljservice = new TljService();
+        $tlj = $tljservice->getTbTlj($main_id, $sub_id);//获取淘礼金相关配置
+
         if($tlj["code"] == "-1") {
             return $this->buildFailed(TaolijinCode::API_PARAMS_ERROR, $tlj["msg"]);
         }
-        $itemid = $this->request->param("itemid"); // 商品id
-        if (!$itemid){
-            return $this->buildFailed(ReturnCode::INVALID, "商品id不能为空");
-        }
+
         $perface = $this->request->param("perface"); // 单个淘礼金面额
         if (!$perface){
             return $this->buildFailed(ReturnCode::INVALID, "淘礼金面额");
         }
+
+
         $totalnum = "1";
         $name = "淘礼金红包";
         $winnum = "1";
@@ -54,6 +65,7 @@ class Taolijin extends Base
         $resp = $c->execute($req);
         $res = json_decode(json_encode($resp), true);
         if ($res["result"]["success"] == "false"){
+            $this->setGoodsStatus($itemid);
             return $this->buildFailed(ReturnCode::INVALID, "创建淘礼金失败", $res["result"]);
         }
         $send_url = $res["result"]["model"]["send_url"]; // 领取淘礼金url
