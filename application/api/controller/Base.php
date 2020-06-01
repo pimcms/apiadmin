@@ -7,12 +7,20 @@
 namespace app\api\controller;
 
 use app\util\ReturnCode;
+use think\App;
 use think\Controller;
 
 class Base extends Controller {
 
     private $debug = [];
     protected $userInfo = [];
+
+    public function __construct(App $app = null)
+    {
+        parent::__construct($app);
+        header("Access-Control-Allow-Origin: *");
+        header("Content-Type: application/json; charset=utf-8");
+    }
 
     public function _initialize() {
 //        $this->userInfo = "";

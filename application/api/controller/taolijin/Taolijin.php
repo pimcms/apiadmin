@@ -3,8 +3,11 @@
 
 namespace app\api\controller\taolijin;
 use app\api\controller\Base;
+use app\util\ReturnCode;
 use app\util\TaolijinCode;
 use app\api\service\Taolijin as TljService;
+use app\api\service\Goods as GoodsService;
+use app\model\taolijin\Tbgift as TbgiftModel;
 
 class Taolijin extends Base
 {
@@ -12,75 +15,73 @@ class Taolijin extends Base
      * 创建淘礼金
      */
     public function createTaolijin(){
-        die(111);
         $main_id = $this->request->post("main_id");//主账户id
-        if (!$main_id) return $this->buildFailed(TaolijinCode::API_PARAMS_ERROR, "缺少参数main_id");
         $sub_id = $this->request->post("sub_id");//机器人子账户
-        if (!$sub_id) return $this->buildFailed(TaolijinCode::API_PARAMS_ERROR, "缺少参数sub_id");
         $wx_id = $this->request->post("wx_id");//wxid
-        if (!$wx_id) return $this->buildFailed(TaolijinCode::API_PARAMS_ERROR, "缺少参数wx_id");
         $uid = $this->request->post("uid");//uid
-        if (!$uid) return $this->buildFailed(TaolijinCode::API_PARAMS_ERROR, "缺少参数uid");
         $goodsid = $this->request->post("goodsid");//商品id
-        if (!$goodsid) return $this->buildFailed(TaolijinCode::API_PARAMS_ERROR, "缺少参数goodsid");
+        $perface = $this->request->post("perface"); //单个淘礼金面额
+        if ($perface < 1) return $this->buildFailed(TaolijinCode::API_PARAMS_ERROR, "淘礼金面额小于1.00元");
         $tljservice = new TljService();
         $tlj = $tljservice->getTbTlj($main_id, $sub_id);//获取淘礼金相关配置
-
-        if($tlj["code"] == "-1") {
-            return $this->buildFailed(TaolijinCode::API_PARAMS_ERROR, $tlj["msg"]);
-        }
-
-        $perface = $this->request->param("perface"); // 单个淘礼金面额
-        if (!$perface){
-            return $this->buildFailed(ReturnCode::INVALID, "淘礼金面额");
-        }
-
+        if($tlj["code"] != 1) return $this->buildFailed($tlj["code"], $tlj["msg"]);
+        $detailGoods = $tljservice->detailGoods($goodsid);//检测商品是否可创建
+        if (!$detailGoods["data"]) return $this->buildFailed(TaolijinCode::API_QUERY_ERROR, "获取商品详情失败");
+        if ($detailGoods["data"]["status"] == -1) return $this->buildFailed(TaolijinCode::API_QUERY_ERROR, "该商品淘礼金已创建完");
 
         $totalnum = "1";
         $name = "淘礼金红包";
         $winnum = "1";
-        $useendtimemode = "1";
-        $useendtime = "2";
-        require_once EXTEND_PATH . "taobaosdk/TopSdk.php";
-        $c = new \TopClient;
-        $c->appkey = $tlj["data"]["appkey"];
-        $c->secretKey = $tlj["data"]["appsecret"];
-        $req = new \TbkDgVegasTljCreateRequest;
-        //$req->setCampaignType("定向：DX；鹊桥：LINK_EVENT；营销：MKT"); // CPS佣金计划类型
-        $req->setAdzoneId($tlj["data"]["adzoneid"]); // 妈妈广告位Id
-        $req->setItemId($itemid); // 宝贝id
-        $req->setTotalNum($totalnum); // 淘礼金总个数
-        $req->setName($name); // 淘礼金名称，最大10个字符
-        $req->setUserTotalWinNumLimit($winnum); // 单用户累计中奖次数上限
-        $req->setSecuritySwitch("true"); // 安全开关
-        $req->setPerFace($perface); // 单个淘礼金面额，支持两位小数，单位元
-        $send_start_date = date("Y-m-d H:i:s");
-        $req->setSendStartTime($send_start_date); // 发放开始时间
-        $send_end_time = strtotime("+30 day");
-        $send_end_date = date("Y-m-d H:i:s", $send_end_time); // 发放截止时间为1个月
-        $req->setSendEndTime($send_end_date); // 发放截止时间
-        $req->setUseEndTime($useendtime); // 使用结束日期。如果是结束时间模式为相对时间，时间格式为1-7直接的整数, 例如，1（相对领取时间1天）； 如果是绝对时间，格式为yyyy-MM-dd，例如，2019-01-29，表示到2019-01-29 23:59:59结束
-        $req->setUseEndTimeMode($useendtimemode); // 结束日期的模式,1:相对时间，2:绝对时间
-        //$req->setUseStartTime(""); // 使用开始日期。相对时间，无需填写，以用户领取时间作为使用开始时间。绝对时间，格式 yyyy-MM-dd，例如，2019-01-29，表示从2019-01-29 00:00:00 开始
-        $resp = $c->execute($req);
-        $res = json_decode(json_encode($resp), true);
-        if ($res["result"]["success"] == "false"){
-            $this->setGoodsStatus($itemid);
-            return $this->buildFailed(ReturnCode::INVALID, "创建淘礼金失败", $res["result"]);
+        $useendtimemode = "1";//结束日期的模式
+        $useendtime = "2";//领取后，几天内可以使用
+        $send_start_date = date("Y-m-d H:i:s");//发放开始时间
+        $send_end_time = strtotime("+1 day");
+        $send_end_date = date("Y-m-d H:i:s", $send_end_time);//发放截止时间
+        $create_result = $tljservice->createTlj($tlj,$goodsid,$totalnum,$name,$winnum,$perface,$useendtime,$useendtimemode,$send_start_date,$send_end_date);
+//        print_r($create_result);die;
+        //判断淘礼金是否创建成功
+        if ($create_result["result"]["success"] == "false"){
+            //创建失败：商品问题，改变商品的状态
+            if ($create_result["result"]["msg_code"] == "FAIL_CHECK_RULE_ERROR" || $create_result["result"]["msg_code"] == "FAIL_BIZ_ITEM_FORBIDDEN"){
+                $goodsservice = new GoodsService();
+                $goodsservice->setGoodsStatus($goodsid);
+            }
+            return $this->buildFailed(TaolijinCode::API_TAOBAO_ERROR, $create_result["result"]["msg_info"], $create_result["result"]);
         }
-        $send_url = $res["result"]["model"]["send_url"]; // 领取淘礼金url
-        $res_pwd = $this->createPwd($send_url); // 生成淘口令
-        if ($res_pwd["code"] == "-1"){
-            return $this->buildFailed(ReturnCode::INVALID, $res_pwd["msg"], $res_pwd["data"]);
+        $send_url = $create_result["result"]["model"]["send_url"]; // 领取淘礼金url
+        $res_pwd = $tljservice->createPwd($send_url);//生成淘口令
+        if ($res_pwd["code"] != 1){
+            return $this->buildFailed(TaolijinCode::API_TAOBAO_ERROR, $res_pwd["msg"], $res_pwd["data"]);
         }
         $pwd = $res_pwd["data"]; // 淘口令
-        $rights_id = $res["result"]["model"]["rights_id"]; // rights_id,必须存储
+        $rights_id = $create_result["result"]["model"]["rights_id"]; // rights_id,必须存储
+        //存储淘礼金相关信息
+        $tljAuth = ["appkey"=>$tlj["data"]["appkey"],"appsecret"=>$tlj["data"]["appsecret"],"pid"=>$tlj["data"]["pid"],"adzoneid"=>$tlj["data"]["adzoneid"]];
+        $remark = json_encode($tljAuth);
+        $data = ["uid"=>$tlj["data"]["uid"],"memberid"=>$uid,"main_id"=>$main_id,"sub_id"=>$sub_id,"wxid"=>$wx_id,"nikename"=>"","rights_id"=>$rights_id,"remark"=>$remark,"send_url"=>$send_url,"pwd"=>$pwd,"goodsid"=>$goodsid,"goodstitle"=>$detailGoods["data"]["title"],"goods_img"=>$detailGoods["data"]["imgs"],"name"=>$name,"totalnum"=>$totalnum,"winnum"=>$winnum,"perface"=>$perface,"createdt"=>date("Y-m-d H:i:s"),"sendstartdt"=>$send_start_date,"sendenddt"=>$send_end_date,"useendtimemode"=>$useendtimemode,"useday"=>$useendtime];
+        $tbgift = new TbgiftModel();
+        $save = $tbgift->save($data);
+        if (!$save) return $this->buildFailed(TaolijinCode::API_SAVE_ERROR, "淘礼金相关信息保存失败");
+        return $this->buildSuccess(["name"=>$name,"tbpwd"=>$pwd,"perface"=>$perface,"send_start_date"=>$send_start_date,"send_end_date"=>$send_end_date,"useendtime"=>$useendtime]);
+    }
 
-        $data = ["main_id"=>"","sub_id"=>"","wxid"=>"","nikename"=>"","rights_id"=>$rights_id,"send_url"=>$send_url,"pwd"=>$pwd,"itemid"=>$itemid,"name"=>$name,"totalnum"=>$totalnum,"winnum"=>$winnum,"perface"=>$perface,"createdt"=>date("Y-m-d H:i:s"),"sendstartdt"=>$send_start_date,"sendenddt"=>$send_end_date,"useendtimemode"=>$useendtimemode,"useday"=>$useendtime];
-        $model = new NcnkTbgift();
-        $save = $model->save($data);
-        if (!$save){
-            return $this->buildFailed(ReturnCode::INVALID, "保存失败");
-        }
+    /**
+     * 淘礼金使用记录
+     */
+    public function taolijinRecord(){
+        $main_id = $this->request->post("main_id");//主账户id
+        $sub_id = $this->request->post("sub_id");//机器人子账户
+        $wx_id = $this->request->post("wx_id");//wxid
+        $uid = $this->request->post("uid");//uid
+        $page = $this->request->post("page", 1);//page
+        $pageSize = $this->request->post("pageSize", 10);//limit
+        $where = ["main_id"=>$main_id, "sub_id"=>$sub_id, "wxid"=>$wx_id, "memberid"=>$uid];
+        $tliModel = new TbgiftModel();
+        $count = $tliModel->where($where)->count();
+        $listObj = $tliModel->where($where)->order("createdt desc")->page($page, $pageSize)->select();
+        if (false == $listObj) return $this->buildFailed(TaolijinCode::API_QUERY_ERROR, "查询失败");
+        $list = $listObj->toArray();
+
+        return $this->buildSuccess(["count"=>$count,"list"=>$list]);
     }
 }
