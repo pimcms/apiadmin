@@ -20,12 +20,12 @@ class Goods extends Base
         if (!$userObj) return $this->buildFailed(TaolijinCode::API_ERROR, TaolijinDesc::GET_LIST_GOODS_FAILED);
         $user = $userObj->toArray();
         $page = $this->request->get("page", 1);
-        $limit = $this->request->get("limit", 10);
+        $pageSize = $this->request->get("pageSize", 10);
         $where = [
             "status"=>1
         ];
         $goods = new GoodsModel();
-        $listObj = $goods->where($where)->order("create_time desc")->page($page, $limit)->select();
+        $listObj = $goods->where($where)->order("create_time desc")->page($page, $pageSize)->select();
         if (false === $listObj) return $this->buildFailed(TaolijinCode::API_ERROR, TaolijinDesc::GET_LIST_GOODS_FAILED);
         $list = $listObj->toArray();
         $count = $goods->where($where)->count();
