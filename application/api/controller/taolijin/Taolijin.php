@@ -78,7 +78,8 @@ class Taolijin extends Base
         $where = ["main_id"=>$main_id, "sub_id"=>$sub_id, "wxid"=>$wx_id, "memberid"=>$uid];
         $tliModel = new TbgiftModel();
         $count = $tliModel->where($where)->count();
-        $listObj = $tliModel->where($where)->order("createdt desc")->page($page, $pageSize)->select();
+        $listObj = $tliModel->where($where)->order("createdt desc")->page($page, $pageSize)->fetchSql(true)->select();
+        print_r($listObj);die;
         if (false == $listObj) return $this->buildFailed(TaolijinCode::API_QUERY_ERROR, "查询失败");
         $list = $listObj->toArray();
 
